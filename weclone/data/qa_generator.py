@@ -464,7 +464,8 @@ class DataProcessor:
                 if i.type_name == "图片":
                     # combined_content += "<image>"
                     combined_src_list.append(i.src)
-
+                if type(content) == float:
+                    logger.info(content)
                 combined_content += content
 
             if len(combined_content) > self.c.combine_msg_max_length:
@@ -574,6 +575,7 @@ class DataProcessor:
         )
 
         df["src"] = df["src"].fillna("")
+        df["msg"] = df["msg"].fillna("")
         df = df[~df["type_name"].isin(values=skip_type_list)]
 
         # 如果type_name为文本 并且msg 包含 手机号、身份证号、邮箱、网址则删除这行
