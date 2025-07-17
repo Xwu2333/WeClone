@@ -18,6 +18,7 @@ dependencies = [
   "tomli; python_version < '3.11'",
   "langchain",
   "openai==1.76.0",
+  "bitsandbytes"
 ]
 
 [tool.weclone]
