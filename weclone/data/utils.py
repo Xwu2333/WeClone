@@ -1,23 +1,19 @@
 import base64
+import concurrent.futures
 import os
-import time
 from pathlib import Path
 
 import requests
 
+from weclone.utils.config_models import WCMakeDatasetConfig
 from weclone.utils.log import logger
+from weclone.utils.retry import retry_on_http_error
 
 
 def check_image_file_exists(file_path: str) -> str | bool:
-    """
-    检查传入的文件路径，提取文件名（去掉前缀和扩展名），
-    然后检查 dataset/images 目录下是否存在对应的文件（不论扩展名）
-    """
     try:
-        # 直接使用 os.path.normpath 处理路径，然后转换为正斜杠
         normalized_path = os.path.normpath(file_path).replace("\\", "/")
 
-        # 提取文件名
         filename_with_ext = os.path.basename(normalized_path)
         filename_without_ext = Path(filename_with_ext).stem
 
@@ -41,10 +37,11 @@ def check_image_file_exists(file_path: str) -> str | bool:
 class ImageToTextProcessor:
     """通过兼容OpenAI API的多模态LLM将图片转换为文本。"""
 
-    def __init__(self, api_url: str, api_key: str, model_name: str):
+    def __init__(self, api_url: str, api_key: str, model_name: str, config: WCMakeDatasetConfig):
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key
         self.model_name = model_name
+        self.config = config
         self.prompt = """
         请描述这张图片的内容，重点关注：
         1. 如果是截图，描述界面内容和操作
@@ -53,6 +50,55 @@ class ImageToTextProcessor:
         4. 如果是生活照片，简要描述场景和内容。
         请用简洁明了的语言描述，不超过100字。"""
 
+    def _process_images_in_parallel(self, qa_list):
+        """并行处理所有对话中的图片，并将描述替换回对话文本。"""
+        all_image_paths = []
+        media_dir = self.config.media_dir
+
+        # 遍历所有对话，收集并构造完整的图片路径
+        for qa_pair in qa_list:
+            if qa_pair.images:
+                image_list = qa_pair.images if isinstance(qa_pair.images, list) else [qa_pair.images]
+                for relative_path in image_list:
+                    full_path = os.path.join(media_dir, relative_path)
+                    all_image_paths.append(full_path)
+
+        if not all_image_paths:
+            logger.info("未在对话中找到任何图片，跳过识别。")
+            return qa_list
+
+        logger.info(f"共找到 {len(all_image_paths)} 张有效图片需要识别。")
+        max_workers = self.config.vision_api.max_workers
+
+        # 使用线程池并行调用API，executor.map 会保持结果顺序与输入一致
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 现在传递给 image_processor 的是完整的路径
+            image_descriptions = list(executor.map(self.describe_image, all_image_paths))
+
+        desc_iterator = iter(image_descriptions)
+        for qa_pair in qa_list:
+            if not qa_pair.images:
+                continue
+
+            for message in qa_pair.messages:
+                # 替换消息内容中的 <image> 占位符
+                num_images_in_message = message.content.count("<image>")
+                for _ in range(num_images_in_message):
+                    try:
+                        description = next(desc_iterator)
+                        # 使用 count=1 确保每次只替换一个占位符，并添加换行符以增强可读性
+                        message.content = message.content.replace(
+                            "<image>", f"\n[图片描述: {description}]\n", 1
+                        )
+                    except StopIteration:
+                        logger.error("图片数量与描述数量不匹配，可能存在逻辑错误。")
+                        message.content = message.content.replace("<image>", "\n[图片描述缺失]\n", 1)
+
+            # 清空图片列表，因为它们已被转换为文本
+            qa_pair.images.clear()
+
+        return qa_list
+
     def _encode_image_to_base64(self, image_path: str) -> str:
         """将图片编码为base64"""
         try:
@@ -60,7 +106,7 @@ class ImageToTextProcessor:
                 return base64.b64encode(image_file.read()).decode("utf-8")
         except Exception as e:
             logger.error(f"编码图片失败 {image_path}: {e}")
-            return None
+            return ""
 
     def _get_image_format(self, image_path: str) -> str:
         """获取图片格式"""
@@ -69,6 +115,14 @@ class ImageToTextProcessor:
             return "jpeg"
         return suffix
 
+    @retry_on_http_error(
+        max_retries=5,
+        base_delay=15.0,
+        max_delay=300.0,
+        backoff_factor=2.0,
+        retry_on_status=[429, 500, 502, 503, 504],
+        retry_on_exceptions=[requests.exceptions.RequestException, ConnectionError, TimeoutError],
+    )
     def _call_vision_api(self, image_path: str) -> str:
         """调用Vision API（增加了重试机制）"""
         base64_image = self._encode_image_to_base64(image_path)
@@ -97,49 +151,22 @@ class ImageToTextProcessor:
             "temperature": 0.1,
         }
 
-        # --- 重试逻辑 ---
-        max_retries = 5  # 最大重试次数
-        base_delay = 15  # 基础等待时间（秒）
+        response = requests.post(
+            f"{self.api_url}/chat/completions", headers=headers, json=payload, timeout=60
+        )
 
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(
-                    f"{self.api_url}/chat/completions", headers=headers, json=payload, timeout=60
-                )
-                if response.status_code == 200:
-                    pass
-                elif response.status_code in [429, 500, 502, 503, 504]:
-                    response.raise_for_status()
-                else:
-                    logger.error(f"API请求失败，状态码: {response.status_code}，原因: {response.reason}")
-                    return "[图片描述获取失败]"
-
-                result = response.json()
-
-                if "choices" in result and len(result["choices"]) > 0:
-                    content = result["choices"][0]["message"]["content"]
-                    return content.strip()
-                else:
-                    logger.warning(f"API响应格式异常: {result}")
-                    return "[图片描述获取失败：API格式错误]"
-
-            except requests.exceptions.RequestException as e:
-                logger.warning(f"API请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    # 指数退避等待
-                    wait_time = base_delay * (2**attempt)
-                    logger.info(f"将在 {wait_time} 秒后重试...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"API请求在 {max_retries} 次尝试后最终失败: {image_path}")
-                    return "[图片描述获取失败：请求异常]"
-            except Exception as e:
-                logger.error(f"处理API响应时出现未知错误 {image_path}: {e}")
-                # 对于未知错误，可以选择不重试，直接返回
-                return "[图片描述获取失败：未知错误]"
-
-        # 如果循环结束仍未成功（理论上不会执行到这里，因为上面已有返回）
-        return "[图片描述获取失败：所有重试均失败]"
+        if response.status_code == 200:
+            result = response.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                content = result["choices"][0]["message"]["content"]
+                return content.strip()
+            else:
+                logger.warning(f"API响应格式异常: {result}")
+                return "[图片描述获取失败：API格式错误]"
+        else:
+            logger.error(f"API请求失败，状态码: {response.status_code}，原因: {response.reason}")
+            response.raise_for_status()  # 触发重试机制
+            return "[图片描述获取失败]"
 
     def describe_image(self, image_path: str) -> str:
         """公开方法，用于描述单张图片内容"""
