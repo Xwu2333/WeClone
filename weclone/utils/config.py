@@ -11,6 +11,8 @@ from .config_models import (
     WCInferConfig,
     WCMakeDatasetConfig,
     WCTrainSftConfig,
+    WCModelConfig,
+    WCLoraConfig,
 )
 from .log import logger
 from .tools import dict_to_argv
@@ -65,21 +67,28 @@ def create_config_by_arg_type(arg_type: str, wc_config: WcConfig) -> BaseModel:
         return wc_config.test_model_args
 
     elif arg_type == "train_sft":
-        common_config["include_type"] = wc_config.make_dataset_args.include_type
+        # common_config["include_type"] = wc_config.make_dataset_args.include_type
         config_dict = {**common_config, **wc_config.train_sft_args.model_dump()}
         return WCTrainSftConfig(**config_dict)
 
     elif arg_type == "make_dataset":
         make_dataset_config = wc_config.make_dataset_args.model_dump()
-        # TODO: Should the following three parameters be moved to common?
-        train_sft_args = wc_config.train_sft_args
-        extra_values = {
-            "dataset": train_sft_args.dataset,
-            "dataset_dir": train_sft_args.dataset_dir,
-            "cutoff_len": train_sft_args.cutoff_len,
-        }
-        config_dict = {**common_config, **make_dataset_config, **extra_values}
+        config_dict = {**common_config, **make_dataset_config}
         return WCMakeDatasetConfig(**config_dict)
+
+    elif arg_type == "model_args":
+        # Create WCModelConfig for FastLanguageModel.from_pretrained() parameters
+        model_config_dict = {
+            **wc_config.model_args.model_dump(),  # Use model_args from settingsf
+        }
+        return WCModelConfig(**model_config_dict)
+
+    elif arg_type == "lora_args":
+        # Create WCLoraConfig for FastLanguageModel.get_peft_model() parameters
+        lora_config_dict = {
+            **wc_config.lora_args.model_dump(),  # Use lora_args from settings
+        }
+        return WCLoraConfig(**lora_config_dict)
 
     else:
         raise ValueError("Unsupported argument type")

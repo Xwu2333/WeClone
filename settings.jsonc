@@ -1,8 +1,8 @@
 {
     "version": "0.2.24",
     "common_args": {
-        "model_name_or_path": "./Qwen2.5-7B-Instruct-bnb-4bit",
-        "adapter_name_or_path": "./model_output2", //同时做为train_sft_args的output_dir
+        // "model_name_or_path": "./Qwen2.5-7B-Instruct-bnb-4bit",
+        // "adapter_name_or_path": "./model_output2",
         "template": "qwen",
         "default_system": "请你扮演一名人类，你的名字叫吴轩昊，请你以他的口吻说话交流和聊天，不要说自己是人工智能",
         "finetuning_type": "lora",
@@ -13,7 +13,7 @@
     },
     "make_dataset_args": {
         //数据处理配置
-        "platform": "wechat",
+        "platform": "chat",
         "include_type": [
             "text"
         ],
@@ -46,38 +46,61 @@
             "api_url": "https://xxx/v1", // 例如阿里云，或替换为其他兼容OpenAI的API地址
             "model_name": "xxx", // 要使用的多模态模型名称,例如qwen-vl-max
             "max_workers": 5 // 并行调用API的线程数，最多不要超过8
-        }
+        },
+        "dataset": "chat-sft"
     },
-    "train_sft_args": {
+    "model_args": {
+        // Model loading configuration
+        "model_name": "unsloth/Qwen3-14B-unsloth-bnb-4bit",
+        "max_seq_length": 256,
+        "dtype": null, // The data type used
+        "load_in_4bit": true,
+        "trust_remote_code": true
+    },
+     "train_sft_args": {
         //微调配置
-        "stage": "sft",
+        // "stage": "sft",
         "dataset": "chat-sft",
         "dataset_dir": "./dataset/res_csv/sft",
-        "use_fast_tokenizer": true,
-        "lora_target": "q_proj, k_proj, v_proj, up_proj, down_proj, o_proj, gate_proj",
-        "lora_rank": 32,
-        "lora_dropout": 0.1,
-        "weight_decay": 0.01,
-        "use_rslora": true,
-        "overwrite_cache": true,
-        "per_device_train_batch_size": 8,
-        "gradient_accumulation_steps": 4,
-        "lr_scheduler_type": "cosine",
-        "cutoff_len": 256,
-        "logging_steps": 1,
-        "save_steps": 5,
-        "learning_rate": 1e-4,
-        "warmup_ratio": 0.1,
-        "num_train_epochs": 2,
-        "plot_loss": true,
-        "bf16": true,
-        // "flash_attn": "fa2",
-        "use_unsloth": true,
-        "use_unsloth_gc": true,
+        "sft_trainer_args": {
+            "dataset_text_field": "text",
+            "dataset_num_proc" : 0,
+            // "use_fast_tokenizer": true,
+            "weight_decay": 0.01,
+            // "overwrite_cache": true,
+            "per_device_train_batch_size": 2,
+            "gradient_accumulation_steps": 8,
+            "lr_scheduler_type": "cosine",
+            // "cutoff_len": 256,
+            "logging_steps": 1,
+            "save_steps": 5,
+            "learning_rate": 2e-4,
+            "warmup_ratio": 0.1,
+            "num_train_epochs": 2,
+            // "plot_loss": true,
+            "fp16": false,
+            "bf16": true,
+            // "flash_attn": "fa2",
+            // "use_unsloth": true,
+            // "use_unsloth_gc": true,
+        },
+        "output_path": "./model_output2",
+        "do_train": true
         // "enable_liger_kernel": true
-        "dataloader_num_workers": 0
-
+        // "dataloader_num_workers": 0
         // "deepspeed": "ds_config.json" //多卡训练
+    },
+    "lora_args": {
+        // LoRA configuration
+        "target_modules": "q_proj, k_proj, v_proj, o_proj, up_proj, down_proj, gate_proj",
+        "r": 32,
+        "lora_dropout": 0,
+        "lora_alpha": 32, // Will be computed as lora_rank * 2 if null
+        "bias": "none",
+        "use_gradient_checkpointing": "unsloth",
+        "random_state": 3407,
+        "use_rslora": true,
+        "loftq_config": null
     },
     "infer_args": {
         "repetition_penalty": 1.5,
