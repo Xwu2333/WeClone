@@ -1,10 +1,13 @@
-import json
 import os
-from typing import Dict, List, cast
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+os.environ['TORCH_USE_CUDA_DSA'] = '1'
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
+from typing import Dict, List, cast
+import json
 import torch
 import unsloth
-from unsloth import FastLanguageModel, is_bf16_supported
+from unsloth import FastLanguageModel, FastModel, is_bf16_supported
 from datasets import load_dataset
 from transformers import AutoTokenizer
 from trl import SFTConfig, SFTTrainer, apply_chat_template
@@ -15,6 +18,13 @@ from weclone.utils.log import logger
 
 
 def main():
+    # os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+    # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+    # os.environ["TORCH_CUDA_ARCH_LIST"] ="12.0"
+    # os.environ["TORCH_COMPILE_DISABLE"] = "1"
+    # os.environ["TRITON_CACHE_DIR"] = "C:\\tmp\\triton"
+    # os.environ["TORCHINDUCTOR_CACHE_DIR"] = "C:\\tmp\\torchinductor"
+
     train_config: WCTrainSftConfig = cast(WCTrainSftConfig, load_config(arg_type="train_sft"))
     dataset_config: WCMakeDatasetConfig = cast(WCMakeDatasetConfig, load_config(arg_type="make_dataset"))
 
@@ -60,8 +70,8 @@ def main():
     # Load model and tokenizer using Unsloth
     model_args_dict = model_config.model_dump()
     # model_args_dict["dtype"] = torch.bfloat16 if train_config.fp16 and is_bf16_supported() else (torch.float16 if train_config.fp16 else None)
-
     model, tokenizer = FastLanguageModel.from_pretrained(**model_args_dict)
+    # model, tokenizer = FastModel.from_pretrained(**model_args_dict)
     logger.info(f"Model loaded with dtype: {model.dtype}")
 
 
@@ -116,15 +126,29 @@ def main():
 
     # Train and save
     if train_config.do_train:
-        trainer.train()
+        trainer_stats = trainer.train()
+
+        used_memory = round(torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024, 3)
+        used_memory_for_lora = round(used_memory - start_gpu_memory, 3)
+        used_percentage = round(used_memory / max_memory * 100, 3)
+        lora_percentage = round(used_memory_for_lora / max_memory * 100, 3)
+        logger.info(f"{trainer_stats.metrics['train_runtime']} seconds used for training.")
+        logger.info(
+            f"{round(trainer_stats.metrics['train_runtime']/60, 2)} minutes used for training."
+        )
+        logger.info(f"Peak reserved memory = {used_memory} GB.")
+        logger.info(f"Peak reserved memory for training = {used_memory_for_lora} GB.")
+        logger.info(f"Peak reserved memory % of max memory = {used_percentage} %.")
+        logger.info(f"Peak reserved memory for training % of max memory = {lora_percentage} %.")
+        
         output_dir = train_config.output_path
         # trainer.save_model(os.path.join(output_dir, "saved_model_from_trainer"))
         model.save_pretrained(os.path.join(output_dir, "Adapter"))
+        logger.info(f"Adapter saved to {os.path.join(output_dir, 'Adapter')}")
         model.save_pretrained_merged(os.path.join(output_dir), tokenizer, save_method = "merged_16bit")
         # model.save_pretrained_gguf(os.path.join(output_dir, "sft_model"), tokenizer, quantization_method = "f16")
         logger.info(f"{os.getcwd()}")
         # tokenizer.save_pretrained(output_dir)
-        logger.info(f"Adapter saved to {os.path.join(output_dir, 'Adapter')}")
 
 
 if __name__ == "__main__":
