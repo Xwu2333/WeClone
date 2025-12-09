@@ -2,7 +2,7 @@
 name = "WeClone"
 version = "0.3.02"
 description = "One-stop solution for creating your digital avatar from chat history"
-authors = [{ name = "xming521" }]
+authors = [{ name = "xming521&Xw2333" }]
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
 
@@ -35,10 +35,13 @@ config_changelog = """
 main = [
   "unsloth",
   "vllm==0.10.0; platform_system == 'Linux'",
-  "torch==2.7.1",
-  "torchvision==0.22.1",
+  "torch==2.7.0",
+  "torchvision==0.22.0",
+  "xformers==0.0.30",
+  "torchao==0.13.0",
   "transformers==4.53.2",
   "accelerate==1.7.0",
+  "triton-windows==3.3.1.post19; platform_system == 'Windows'",
   "triton==3.3.1; platform_system == 'Linux'",
   "presidio_analyzer[transformers]",
   "presidio_anonymizer",
@@ -68,26 +71,26 @@ torch-backend = "auto"
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu126", marker = "platform_system == 'Windows'" },
-  { index = "pytorch-cu126", marker = "platform_system == 'Linux'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Windows'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Linux'" },
 ]
 torchaudio = [
-  { index = "pytorch-cu126", marker = "platform_system == 'Windows'" },
-  { index = "pytorch-cu126", marker = "platform_system == 'Linux'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Windows'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Linux'" },
 ]
 torchvision = [
-  { index = "pytorch-cu126", marker = "platform_system == 'Windows'" },
-  { index = "pytorch-cu126", marker = "platform_system == 'Linux'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Windows'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Linux'" },
 ]
 triton = [
-  { index = "pytorch-cu126", marker = "platform_system == 'Windows'" },
-  { index = "pytorch-cu126", marker = "platform_system == 'Linux'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Windows'" },
+  { index = "pytorch-cu128", marker = "platform_system == 'Linux'" },
 ]
 
 
 [[tool.uv.index]]
-name = "pytorch-cu126"
-url = "https://download.pytorch.org/whl/cu126"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.setuptools.packages.find]

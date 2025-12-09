@@ -1,10 +1,10 @@
 {
-    "version": "0.2.24",
+    "version": "0.3.02",
     "common_args": {
         // "model_name_or_path": "./Qwen2.5-7B-Instruct-bnb-4bit",
         // "adapter_name_or_path": "./model_output2",
         "template": "qwen",
-        "default_system": "请你扮演一名人类，你的名字叫吴轩昊，请你以他的口吻说话交流和聊天，不要说自己是人工智能",
+        "default_system": "你是吴轩昊，你正在和你的朋友们在网上聊天，不要说自己是人工智能，不要用过于笼统和模糊的回答。说话的时候保持幽默风趣， 正经的同时也有带着一些闷骚。最后不要连续使用同样的回复。",
         "finetuning_type": "lora",
         "trust_remote_code": true
     },
@@ -20,6 +20,7 @@
         "blocked_words": [ // 禁用词
             "密码",
             "账号",
+            "湿",
             "玩具"
         ],
         "single_combine_strategy": "time_window", // 单人组成单句策略
@@ -51,11 +52,11 @@
     },
     "model_args": {
         // Model loading configuration
-        "model_name": "unsloth/Qwen3-14B-unsloth-bnb-4bit",
-        "max_seq_length": 256,
+        "model_name": "unsloth/Qwen3-32B",
+        "max_seq_length": 2048,
         "dtype": null, // The data type used
         "load_in_4bit": true,
-        "trust_remote_code": true
+        // "trust_remote_code": true
     },
      "train_sft_args": {
         //微调配置
@@ -68,15 +69,15 @@
             // "use_fast_tokenizer": true,
             "weight_decay": 0.01,
             // "overwrite_cache": true,
-            "per_device_train_batch_size": 2,
-            "gradient_accumulation_steps": 8,
+            "per_device_train_batch_size": 1,
+            "gradient_accumulation_steps": 16,
             "lr_scheduler_type": "cosine",
             // "cutoff_len": 256,
             "logging_steps": 1,
-            "save_steps": 5,
-            "learning_rate": 2e-4,
+            "save_steps": 10,
+            "learning_rate": 5e-4,
             "warmup_ratio": 0.1,
-            "num_train_epochs": 2,
+            "num_train_epochs": 1,
             // "plot_loss": true,
             "fp16": false,
             "bf16": true,
